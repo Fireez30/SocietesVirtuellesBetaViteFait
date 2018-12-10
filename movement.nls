@@ -1,0 +1,237 @@
+turtles-own[
+obstacles          ;; agentset of neaby obstacles
+flockmates         ;; agentset of nearby turtles
+nearest-neighbor   ;; closest one of our flockmates
+;;------------------------------------
+;;
+;; Behaviour ponderation
+;;
+;;------------------------------------
+fobj
+fobs
+falign
+fseparate
+fcohere
+]
+
+patches-own[
+obstacle
+]
+
+to make-obstacles
+  if mouse-down?
+  [ ask patches
+    [ if ((abs (pxcor - mouse-xcor)) < 1) and ((abs (pycor - mouse-ycor)) < 1)
+      [ set pcolor brown set obstacle true]]]
+  display
+end
+
+to spawn-walls
+  ask patches [ if random-float 1.0 < 0.04 [ set pcolor brown set obstacle true] ]
+  reset-ticks
+end
+
+
+to import-model
+  ;;model : model.png, size : 32x32
+  import-pcolors "model.png"
+  ask patches [set onfire false]
+  ask patches [if pcolor != black
+    [set pcolor brown set obstacle true]]
+  reset-ticks
+end
+
+;;turtle movements procedure
+
+
+to flock
+  find-flockmates
+  find-obstacles
+ ; find-exit
+  
+  let v2 vectDirect
+  
+  let a angleFromVect v2
+  turn-towards a max-angle-turn
+end
+
+to A*
+  find-obstacles
+  
+  let vr multiplyScalarvect fobj vectObj
+  ;let vs multiplyScalarvect fobs vectObstacles
+  
+  ;let v additionvect vr vs
+  
+  let a angleFromVect vr;v
+  turn-towards a max-angle-turn  
+end
+
+to find-obstacles
+  set obstacles patches in-cone fov-radius fov-angle with [pcolor = brown or pcolor = red ];or pcolor = gray]
+end
+
+to find-flockmates  ;; turtle procedure
+
+  if personality = true and leader-follower = true
+  [
+    ifelse E- = 0 or role = 0
+    [ set flockmates other turtles with  [color = pink ] in-cone fov-radius fov-angle ]
+    [
+      ifelse A- = 0 [ set flockmates other turtles with  [color != red] in-cone fov-radius fov-angle ]   ; sceptical people don't follow leader
+      [set flockmates other turtles with  [color != red and role = 0] in-cone fov-radius fov-angle]   ; role = 0 -> leader
+    ]
+  ]
+  
+  if personality = true and leader-follower = false
+  [
+    ifelse E- = 0
+    [ set flockmates other turtles with  [color = pink] in-cone fov-radius fov-angle ]
+    [
+      set flockmates other turtles with  [color != red] in-cone fov-radius fov-angle
+    ]
+  ]
+  
+  if personality = false and leader-follower = true
+  [
+    ifelse role = 0
+    [ set flockmates other turtles with  [color = pink] in-cone fov-radius fov-angle ]
+    [
+      set flockmates other turtles with  [color != red and role = 0] in-cone fov-radius fov-angle   ; role = 0 -> leader
+    ]
+  ]
+  
+  if personality = false and leader-follower = false
+  [
+    set flockmates other turtles with  [color != red] in-cone fov-radius fov-angle
+  ]
+end
+
+to find-nearest-neighbor ;; turtle procedure
+  set nearest-neighbor min-one-of flockmates [distance myself]
+end
+
+
+to-report vectObjObstacle
+  let vobj multiplyScalarvect fobj vectObj
+  let vobs multiplyScalarvect fobs vectObstacles
+
+  let vr additionvect vobj vobs
+  report vr
+end
+
+to-report vectDirect
+  ifelse any? flockmates[
+  let va multiplyScalarvect falign vectAlign
+  let vs multiplyScalarvect fseparate vectSeparate
+  let vc multiplyScalarvect fcohere vectCohere
+  let vo multiplyScalarvect fobs vectObstacles
+    
+  let vr additionvect va vs
+  let vz additionvect vo vc
+  set vr additionvect vr vz
+  report vr]
+  [report (list 0 0)]
+end
+
+
+to-report vectOb
+  let vo (list 0 0)
+  if any? obj [
+    let nearest-patch min-one-of obj [distance myself]
+    let d distance nearest-patch
+    if (d = 0) [set d 0.1]
+    set vo VectFromAngle (towards nearest-patch) (1 / d)
+  ]
+  report vo
+end
+
+to-report vectObj
+  let vo (list 0 0)
+      let d distance last path
+      set vo VectFromAngle (towards last path) (1 / d)
+    if d < next-patch-range
+    [
+     ifelse length path > 1
+    [set path remove-item (length path - 1) path
+    set Ast-panic-timer 0 ]
+    [set Ast-panic-timer 1]]
+    report vo
+end
+
+to-report vectWithObj
+  let vo multiplyScalarvect 1 vectObj
+  report vo
+end
+
+to-report vectObstacles
+  let vo (list 0 0)
+  if any? obstacles [
+    let nearest-patch min-one-of obstacles [distance myself]
+    let d distance nearest-patch
+    set vo VectFromAngle ((towards nearest-patch) + 180) (1 / d)
+  ]
+  report vo
+end
+
+to-report vectWithObstacles
+  let vo multiplyScalarvect fobs vectObstacles
+  report vo
+end
+
+to-report vectSeparate
+  let vs 0
+  find-nearest-neighbor
+  ifelse (nearest-neighbor = nobody)
+  [set vs VectFromAngle random 180 0]
+  [set vs VectFromAngle (towards nearest-neighbor + 180 ) (1 / distance nearest-neighbor)]
+  report vs
+end
+
+to-report vectAlign
+  let n count flockmates
+  let x-component (sum [dx] of flockmates) / n
+  let y-component (sum [dy] of flockmates) / n
+  report (list x-component y-component)
+end
+
+to-report vectCohere
+  let x-component mean [sin (towards myself + 180)] of flockmates
+  let y-component mean [cos (towards myself + 180)] of flockmates
+  report (list x-component y-component)
+end
+
+to check-coll
+  foreach (list speed)
+  [ x ->
+    let pas x / 5
+    let liste (list pas pas pas pas pas)
+    foreach liste
+    [
+      fd pas
+      if (pcolor = red or pcolor = brown)[
+        rt 120
+        fd pas
+        rt random 20
+        lt random 20
+      ]
+    ]
+  ]
+end
+
+to turn-towards [new-heading max-turn]  ;; turtle procedure
+  turn-at-most (subtract-headings new-heading heading) max-turn
+end
+
+
+to turn-away [new-heading max-turn]  ;; turtle procedure
+  turn-at-most (subtract-headings heading new-heading) max-turn
+end
+
+to turn-at-most [turn max-turn]  ;; turtle procedure
+  ifelse abs turn > max-turn
+    [ ifelse turn > 0
+        [ rt max-turn ]
+        [ lt max-turn ] ]
+    [ rt turn ]
+end
